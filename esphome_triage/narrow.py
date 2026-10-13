@@ -12,7 +12,7 @@ from pathlib import Path
 import re
 import subprocess
 
-from .parse import Version
+from .parse import BOILERPLATE_COMPONENTS, Version
 
 UPSTREAM = "https://github.com/esphome/esphome.git"
 TAG_RE = re.compile(r"^(20\d\d)\.(\d{1,2})\.(\d{1,2})(b\d+)?$")
@@ -87,6 +87,8 @@ def component_paths(repo: Path, ref: str, names: list[str], follow_deps: bool = 
             continue
         for match in DEPS_RE.finditer(source):
             for dep in re.findall(r"[\"']([a-z0-9_]+)[\"']", match.group(2)):
+                if dep in BOILERPLATE_COMPONENTS:
+                    continue  # esp32, network, ... would pull in half the codebase
                 dep_path = f"esphome/components/{dep}/"
                 if dep_path not in paths:
                     paths.append(dep_path)
@@ -115,8 +117,8 @@ class Candidate:
         return bool(MECHANICAL_RE.search(self.subject))
 
 
-def _changes(repo: Path, ref: str, paths: list[str]) -> dict[str, Candidate]:
-    log = git(repo, "log", "--no-merges", "--format=%x1e%H%x09%cs%x09%s", "--name-only", ref, "--", *paths)
+def _changes(repo: Path, rev_range: str, paths: list[str]) -> dict[str, Candidate]:
+    log = git(repo, "log", "--no-merges", "--format=%x1e%H%x09%cs%x09%s", "--name-only", rev_range, "--", *paths)
     found: dict[str, Candidate] = {}
     for record in log.split("\x1e"):
         lines = [line for line in record.strip().splitlines() if line.strip()]
@@ -134,7 +136,12 @@ def _changes(repo: Path, ref: str, paths: list[str]) -> dict[str, Candidate]:
 
 
 def candidates(repo: Path, good: str, bad: str, paths: list[str]) -> list[Candidate]:
-    """PRs that touched `paths` and are in `bad` but not in `good`, oldest first."""
-    in_bad = _changes(repo, bad, paths)
-    in_good = _changes(repo, good, paths)
+    """PRs that touched `paths` and are in `bad` but not in `good`, oldest first.
+
+    Only history after the two releases split is read: everything before is in both. Fixes that were
+    cherry-picked into `good`'s patch releases show up on its side and are subtracted by PR number.
+    """
+    base = git(repo, "merge-base", good, bad).strip()
+    in_bad = _changes(repo, f"{base}..{bad}", paths)
+    in_good = _changes(repo, f"{base}..{good}", paths)
     return sorted((c for key, c in in_bad.items() if key not in in_good), key=lambda c: (c.mechanical, c.date))

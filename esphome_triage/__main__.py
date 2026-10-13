@@ -75,9 +75,9 @@ def cmd_narrow(args) -> None:
         if not comps:
             comps = [c for c in parse.components(item.title, item.body, item.labels, known) if c not in parse.BOILERPLATE_COMPONENTS][:2]
         extra = [c for c in parse.config_components(item.body, known) if c not in comps]
+        config_comps: list[str] = []
         if args.with_config:
-            comps += extra
-            extra = []
+            config_comps, extra = extra, []
         print(f"{item.ref} {item.title}")
     if not bad_v or not comps:
         raise SystemExit("Need a broken version and at least one component (from the issue, or --bad and -c).")
@@ -85,7 +85,10 @@ def cmd_narrow(args) -> None:
     good = narrow.resolve(good_v, tags, "good") if good_v else (narrow.previous_release(tags, bad) if bad else None)
     if not bad or not good:
         raise SystemExit(f"Could not map versions to release tags (good={good_v}, bad={bad_v}).")
+    if not args.issue:
+        config_comps = []
     paths = narrow.component_paths(mirror, bad, comps, follow_deps=not args.no_deps)
+    paths += [p for p in narrow.component_paths(mirror, bad, config_comps, follow_deps=False) if p not in paths]
     if args.core:
         paths.append("esphome/core/")
     found = narrow.candidates(mirror, good, bad, paths)

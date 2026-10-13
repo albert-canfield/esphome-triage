@@ -74,6 +74,12 @@ class VersionTest(unittest.TestCase):
         self.assertEqual(bad, Version(2026, 8, 1))
 
 
+    def test_mistyped_version_field_loses_to_the_text(self) -> None:
+        body = ("### The problem\n\nWorks with 2026.4.5. Starting with 2026.5.3 the speaker is quiet, still in 2026.8.2.\n\n"
+                "### Which version of ESPHome has the issue?\n\n2025.8.2\n")
+        self.assertEqual(parse.good_bad_versions("low volume", body), (Version(2026, 4, 5), Version(2026, 5, 3)))
+
+
 class ComponentTest(unittest.TestCase):
     def test_field_first_and_boilerplate_last(self) -> None:
         comps = parse.components("[es8388] low volume on esp32", TEMPLATE, [], KNOWN)

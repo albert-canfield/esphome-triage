@@ -116,7 +116,8 @@ def version_mentions(text: str) -> list[tuple[Version, int]]:
     return out
 
 
-SENTENCE_END_RE = re.compile(r"(?<=[^\d\s])[.!?;](?=\s)|\n|,\s+(?:but|and|while|whereas)\b")
+# Dots inside a version are followed by a digit, so "2026.4.5. Next" still ends a sentence.
+SENTENCE_END_RE = re.compile(r"[.!?;](?=\s)|\n|,\s+(?:but|and|while|whereas)\b")
 
 
 def _sentence_around(text: str, pos: int) -> str:
@@ -134,10 +135,10 @@ def good_bad_versions(title: str, body: str) -> tuple[Version | None, Version | 
     The version field is the broken one. A working version is a mention near words like
     "worked", "fine" or "downgrade" that is older than the broken one.
     """
-    bad = Version.parse(section(body, "which version"))
+    field_version = Version.parse(section(body, "which version"))
     text = f"{title}\n{section(body, 'the problem', 'additional information') or body}"
     good: Version | None = None
-    bad_hint: Version | None = None
+    broken: list[Version] = []
     for version, pos in version_mentions(text):
         window = _sentence_around(text, pos)
         good_score = len(GOOD_WORDS.findall(window))
@@ -145,13 +146,15 @@ def good_bad_versions(title: str, body: str) -> tuple[Version | None, Version | 
         if good_score > bad_score:
             if good is None or version > good:
                 good = version
-        elif bad_score > good_score and (bad_hint is None or version < bad_hint):
-            bad_hint = version
-    if bad_hint and (bad is None or (good and bad_hint > good and bad_hint < bad)):
-        bad = bad_hint
-    if good and bad and not good.minor_key <= bad.minor_key:
-        good = None
-    if good and bad and good == bad:
+        elif bad_score > good_score:
+            broken.append(version)
+    # The earliest broken version that is newer than the working one. The version field is only a
+    # candidate when it agrees with the text: reporters often mistype it (2025.8.2 for 2026.8.2).
+    candidates = [v for v in broken if good is None or v > good]
+    if field_version and (good is None or field_version > good):
+        candidates.append(field_version)
+    bad = min(candidates) if candidates else field_version
+    if good and bad and good >= bad:
         good = None
     return good, bad
 

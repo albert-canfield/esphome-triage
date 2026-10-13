@@ -60,11 +60,6 @@ def pr_links(cache: Cache) -> tuple[dict[int, list[Item]], dict[int, list[Item]]
 
 def build(cache: Cache, index: Index, comps: set[str], mirror: Path | None, dup_threshold: float, fix_threshold: float) -> list[Finding]:
     fixes, mentions = pr_links(cache)
-    open_prs_by_comp: dict[str, list[Item]] = {}
-    for pr in cache.items:
-        if pr.kind == "pr" and pr.state == "open":
-            for comp in pr.label_components + parse.components(pr.title, "", [], comps)[:1]:
-                open_prs_by_comp.setdefault(comp, []).append(pr)
     tags = narrow.release_tags(mirror) if mirror else []
 
     findings = []
@@ -93,11 +88,12 @@ def build(cache: Cache, index: Index, comps: set[str], mirror: Path | None, dup_
             if pr.state == "open" and pr.number not in seen:
                 found.open_prs.append(("mentions this issue", pr))
                 seen.add(pr.number)
-        for comp in doc.components[:1]:
-            for pr in open_prs_by_comp.get(comp, []):
-                if pr.number not in seen and not pr.draft:
-                    found.open_prs.append((f"open PR on {comp}", pr))
-                    seen.add(pr.number)
+        for score, other, reasons in index.related(item, limit=25, min_score=0.4):
+            pr = other.item
+            same_comp = any(r.startswith("same component") for r in reasons)
+            if pr.kind == "pr" and pr.state == "open" and same_comp and pr.number not in seen:
+                found.open_prs.append((f"similar open PR, {score:.2f}", pr))
+                seen.add(pr.number)
         if mirror and tags:
             found.regression = regression_for(item, comps, mirror, tags, doc.components)
         findings.append(found)
@@ -106,10 +102,10 @@ def build(cache: Cache, index: Index, comps: set[str], mirror: Path | None, dup_
 
 def regression_for(item: Item, comps: set[str], mirror: Path, tags, issue_comps: list[str]):
     good_v, bad_v = parse.good_bad_versions(item.title, item.body)
-    if not bad_v or not issue_comps:
-        return None
+    if not good_v or not bad_v or not issue_comps:
+        return None  # only reports that name a working version
     bad = narrow.resolve(bad_v, tags, "bad")
-    good = narrow.resolve(good_v, tags, "good") if good_v else (narrow.previous_release(tags, bad) if bad else None)
+    good = narrow.resolve(good_v, tags, "good")
     if not bad or not good or good == bad:
         return None
     primary = [c for c in issue_comps if c not in parse.BOILERPLATE_COMPONENTS][:2] or issue_comps[:1]
