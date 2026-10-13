@@ -85,6 +85,10 @@ class ComponentTest(unittest.TestCase):
         comps = parse.components("[es8388] low volume on esp32", TEMPLATE, [], KNOWN)
         self.assertEqual(comps, ["es8388", "i2s_audio"])  # "esp32" in a title is the platform, not the culprit
 
+    def test_old_names_map_to_current_component(self) -> None:
+        body = "### Component causing the issue\n\nDallas\n"
+        self.assertEqual(parse.components("x", body, [], KNOWN | {"dallas_temp"}), ["dallas_temp"])
+
     def test_labels_win(self) -> None:
         self.assertEqual(parse.components("x", "", ["component: modbus"], KNOWN), ["modbus"])
 

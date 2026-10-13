@@ -36,7 +36,16 @@ GENERIC_FRAMES = {
     "esp_crosscore_isr", "panic_print_backtrace", "esp_panic_handler", "frame_to_panic_info",
     "print_backtrace", "esp_backtrace_print", "vTaskSwitchContext", "_frxt_dispatch", "xPortStartScheduler",
     "esphome::Application::loop", "esphome::Scheduler::call", "call_loop_", "std::function",
+    "prvCheckTasksWaitingTermination", "esp_libc_include_assert_impl", "task_wdt_timeout_handling",
+    "esphome::Application::scheduler_tick_", "esphome::loop_task", "esphome::Application::feed_wdt",
+    "esp_cpu_stall", "esp_ipc_isr_stall_other_cpu", "vTaskDelete", "xTaskResumeAll", "vPortExitCritical",
+    "vPortEnterCritical", "spinlock_acquire", "spinlock_release", "_xt_coproc_exc", "xt_utils_get_core_id",
 }
+
+# Log lines that describe the crash handler or boot environment rather than the bug.
+NOISE_LOG_RE = re.compile(
+    r"^\[[EW]\]\[(esp32\.crash|esp8266\.crash|rp2040\.crash|crash_handler|logger|app)\]|^error: (false|true)$",
+)
 
 # Components that appear in nearly every config; they only matter when named as the culprit.
 BOILERPLATE_COMPONENTS = {
@@ -159,12 +168,17 @@ def good_bad_versions(title: str, body: str) -> tuple[Version | None, Version | 
     return good, bad
 
 
+# Names people use for a component that differ from its folder (old names, spelling).
+ALIASES = {"dallas": "dallas_temp", "onewire": "one_wire", "ds18b20": "dallas_temp", "waveshare": "waveshare_epaper"}
+
+
 def components(title: str, body: str, labels: list[str], known: set[str]) -> list[str]:
     """Components the report is about: labels, title tag, the template field, then the title."""
     found: list[str] = []
 
     def add(name: str) -> None:
         name = name.strip().lower().replace("-", "_")
+        name = ALIASES.get(name, name)
         if name in known and name not in found:
             found.append(name)
 
@@ -222,6 +236,6 @@ def error_lines(body: str) -> list[str]:
             text = "error: " + _normalize(match.group(1))
         else:
             continue
-        if 12 <= len(text) and text not in out:
+        if 12 <= len(text) and text not in out and not NOISE_LOG_RE.search(text):
             out.append(text)
     return out
