@@ -1,0 +1,5 @@
+data/
+triage-report.md
+triage-report.json
+__pycache__/
+*.pyc
